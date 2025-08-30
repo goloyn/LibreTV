@@ -248,6 +248,29 @@ function initializePageContent() {
         setupProgressBarPreciseClicks();
     }, 1000);
 
+      // 跳过片头片尾配置
+  const [skipConfig, setSkipConfig] = useState<{
+    enable: boolean;
+    intro_time: number;
+    outro_time: number;
+  }>({
+    enable: false,
+    intro_time: 0,
+    outro_time: 0,
+  });
+  const skipConfigRef = useRef(skipConfig);
+  useEffect(() => {
+    skipConfigRef.current = skipConfig;
+  }, [
+    skipConfig,
+    skipConfig.enable,
+    skipConfig.intro_time,
+    skipConfig.outro_time,
+  ]);
+
+  // 跳过检查的时间间隔控制
+  const lastSkipCheckRef = useRef(0);
+
     // 添加键盘快捷键事件监听
     document.addEventListener('keydown', handleKeyboardShortcuts);
 
@@ -261,6 +284,137 @@ function initializePageContent() {
         }
     });
 
+  // 跳过片头片尾配置相关函数
+  const handleSkipConfigChange = async (newConfig: {
+    enable: boolean;
+    intro_time: number;
+    outro_time: number;
+  }) => {
+    if (!currentSourceRef.current || !currentIdRef.current) return;
+
+    try {
+      setSkipConfig(newConfig);
+      if (!newConfig.enable && !newConfig.intro_time && !newConfig.outro_time) {
+        await deleteSkipConfig(currentSourceRef.current, currentIdRef.current);
+        artPlayerRef.current.setting.update({
+          name: '跳过片头片尾',
+          html: '跳过片头片尾',
+          switch: skipConfigRef.current.enable,
+          onSwitch: function (item: any) {
+            const newConfig = {
+              ...skipConfigRef.current,
+              enable: !item.switch,
+            };
+            handleSkipConfigChange(newConfig);
+            return !item.switch;
+          },
+        });
+        artPlayerRef.current.setting.update({
+          name: '设置片头',
+          html: '设置片头',
+          icon: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="5" cy="12" r="2" fill="#ffffff"/><path d="M9 12L17 12" stroke="#ffffff" stroke-width="2"/><path d="M17 6L17 18" stroke="#ffffff" stroke-width="2"/></svg>',
+          tooltip:
+            skipConfigRef.current.intro_time === 0
+              ? '设置片头时间'
+              : `${formatTime(skipConfigRef.current.intro_time)}`,
+          onClick: function () {
+            const currentTime = artPlayerRef.current?.currentTime || 0;
+            if (currentTime > 0) {
+              const newConfig = {
+                ...skipConfigRef.current,
+                intro_time: currentTime,
+              };
+              handleSkipConfigChange(newConfig);
+              return `${formatTime(currentTime)}`;
+            }
+          },
+        });
+        artPlayerRef.current.setting.update({
+          name: '设置片尾',
+          html: '设置片尾',
+          icon: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M7 6L7 18" stroke="#ffffff" stroke-width="2"/><path d="M7 12L15 12" stroke="#ffffff" stroke-width="2"/><circle cx="19" cy="12" r="2" fill="#ffffff"/></svg>',
+          tooltip:
+            skipConfigRef.current.outro_time >= 0
+              ? '设置片尾时间'
+              : `-${formatTime(-skipConfigRef.current.outro_time)}`,
+          onClick: function () {
+            const outroTime =
+              -(
+                artPlayerRef.current?.duration -
+                artPlayerRef.current?.currentTime
+              ) || 0;
+            if (outroTime < 0) {
+              const newConfig = {
+                ...skipConfigRef.current,
+                outro_time: outroTime,
+              };
+              handleSkipConfigChange(newConfig);
+              return `-${formatTime(-outroTime)}`;
+            }
+          },
+        });
+      } else {
+        await saveSkipConfig(
+          currentSourceRef.current,
+          currentIdRef.current,
+          newConfig
+        );
+      }
+      console.log('跳过片头片尾配置已保存:', newConfig);
+    } catch (err) {
+      console.error('保存跳过片头片尾配置失败:', err);
+    }
+  };
+
+  const formatTime = (seconds: number): string => {
+    if (seconds === 0) return '00:00';
+
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const remainingSeconds = Math.round(seconds % 60);
+
+    if (hours === 0) {
+      // 不到一小时，格式为 00:00
+      return `${minutes.toString().padStart(2, '0')}:${remainingSeconds
+        .toString()
+        .padStart(2, '0')}`;
+    } else {
+      // 超过一小时，格式为 00:00:00
+      return `${hours.toString().padStart(2, '0')}:${minutes
+        .toString()
+        .padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
+    }
+  };
+
+  class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
+    constructor(config: any) {
+      super(config);
+      const load = this.load.bind(this);
+      this.load = function (context: any, config: any, callbacks: any) {
+        // 拦截manifest和level请求
+        if (
+          (context as any).type === 'manifest' ||
+          (context as any).type === 'level'
+        ) {
+          const onSuccess = callbacks.onSuccess;
+          callbacks.onSuccess = function (
+            response: any,
+            stats: any,
+            context: any
+          ) {
+            // 如果是m3u8文件，处理内容以移除广告分段
+            if (response.data && typeof response.data === 'string') {
+              // 过滤掉广告段 - 实现更精确的广告过滤逻辑
+              response.data = filterAdsFromM3U8(response.data);
+            }
+            return onSuccess(response, stats, context, null);
+          };
+        }
+        // 执行原始load方法
+        load(context, config, callbacks);
+      };
+    }
+  }
     // 视频暂停时也保存
     const waitForVideo = setInterval(() => {
         if (art && art.video) {
@@ -706,6 +860,57 @@ function initPlayer(videoUrl) {
 
         showError('视频播放失败: ' + (error.message || '未知错误'));
     });
+
+          // 监听视频时间更新事件，实现跳过片头片尾
+      artPlayerRef.current.on('video:timeupdate', () => {
+        if (!skipConfigRef.current.enable) return;
+
+        const currentTime = artPlayerRef.current.currentTime || 0;
+        const duration = artPlayerRef.current.duration || 0;
+        const now = Date.now();
+
+        // 限制跳过检查频率为1.5秒一次
+        if (now - lastSkipCheckRef.current < 1500) return;
+        lastSkipCheckRef.current = now;
+
+        // 跳过片头
+        if (
+          skipConfigRef.current.intro_time > 0 &&
+          currentTime < skipConfigRef.current.intro_time
+        ) {
+          artPlayerRef.current.currentTime = skipConfigRef.current.intro_time;
+          artPlayerRef.current.notice.show = `已跳过片头 (${formatTime(
+            skipConfigRef.current.intro_time
+          )})`;
+        }
+
+        // 跳过片尾
+        if (
+          skipConfigRef.current.outro_time < 0 &&
+          duration > 0 &&
+          currentTime >
+            artPlayerRef.current.duration + skipConfigRef.current.outro_time
+        ) {
+          if (
+            currentEpisodeIndexRef.current <
+            (detailRef.current?.episodes?.length || 1) - 1
+          ) {
+            handleNextEpisode();
+          } else {
+            artPlayerRef.current.pause();
+          }
+          artPlayerRef.current.notice.show = `已跳过片尾 (${formatTime(
+            skipConfigRef.current.outro_time
+          )})`;
+        }
+      });
+
+      artPlayerRef.current.on('error', (err: any) => {
+        console.error('播放器错误:', err);
+        if (artPlayerRef.current.currentTime > 0) {
+          return;
+        }
+      });
 
     // 添加移动端长按三倍速播放功能
     setupLongPressSpeedControl();
