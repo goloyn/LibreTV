@@ -31,12 +31,6 @@
             </button>
         </div>
         <h2 id="videoTitle" class="text-xl font-semibold flex-1 text-center overflow-x-auto whitespace-nowrap truncate custom-title-scroll"></h2>
-<!-- 在 <h2 id="videoTitle"> 标签下方添加 -->
-            <div class="skip-controls" style="display: flex; gap: 10px; align-items: center;">
-            <label>跳过片头: <input type="number" id="skipIntro" min="0" value="0" style="width: 60px;"></label>
-            <label>跳过片尾: <input type="number" id="skipOutro" min="0" value="0" style="width: 60px;"></label>
-            <button onclick="applySkip()" style="padding: 2px 8px; background: #333; border: 1px solid #666; border-radius: 3px;">应用</button>
-        </div>
         <a href="#" id="goBack" onclick="goBack(event)" class="px-4 py-2 bg-[#222] hover:bg-[#333] border border-[#333] rounded-lg transition-colors flex items-center min-w-0 home-btn">
             <svg class="w-5 h-5 mr-1" viewBox="0 0 24 24" fill="#ffffff" xmlns="http://www.w3.org/2000/svg">
                 <path d="M5.25 11h15a1.5 1.5 0 1 1 0 3H5.25a1.5 1.5 0 0 1 0-3z"/>
@@ -233,6 +227,7 @@
     <script src="libs/artplayer.min.js" crossorigin="anonymous"></script>
 
     <script src="js/config.js"></script>
+    <script src="js/proxy-auth.js"></script>
     <script src="js/customer_site.js"></script>
     <script src="js/password.js"></script>
     <script src="js/ui.js"></script>
@@ -247,7 +242,6 @@
         // 注入服务器端环境变量 (将由服务器端替换)
         // PASSWORD 变量将在这里被服务器端注入
         window.__ENV__.PASSWORD = "{{PASSWORD}}";
-        window.__ENV__.ADMINPASSWORD = "{{ADMINPASSWORD}}";
 
         // 修复 home 跳转
         document.addEventListener('DOMContentLoaded', function() {
@@ -284,45 +278,5 @@
             });
         });
     </script>
-    <script>
-// 全局变量存储跳过时间
-let skipIntro = 0;
-let skipOutro = 0;
-
-// 应用跳过设置
-function applySkip() {
-  skipIntro = parseInt(document.getElementById('skipIntro').value) || 0;
-  skipOutro = parseInt(document.getElementById('skipOutro').value) || 0;
-  
-  // 保存到本地存储
-  localStorage.setItem('skipSettings', JSON.stringify({ skipIntro, skipOutro }));
-  
-  // 立即执行跳过（假设播放器实例为 `player`）
-  if (window.player) {
-    const currentTime = player.currentTime;
-    const duration = player.duration;
-    
-    // 跳过片头
-    if (skipIntro > 0 && currentTime < skipIntro) {
-      player.currentTime = skipIntro;
-    }
-    
-    // 跳过片尾（提前停止）
-    if (skipOutro > 0 && currentTime > (duration - skipOutro)) {
-      player.pause();
-    }
-  }
-}
-
-// 初始化时加载保存的设置
-document.addEventListener('DOMContentLoaded', () => {
-  const saved = localStorage.getItem('skipSettings');
-  if (saved) {
-    const { skipIntro, skipOutro } = JSON.parse(saved);
-    document.getElementById('skipIntro').value = skipIntro;
-    document.getElementById('skipOutro').value = skipOutro;
-  }
-});
-</script>
 </body>
 </html>
