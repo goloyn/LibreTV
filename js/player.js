@@ -141,7 +141,7 @@ function initializePageContent() {
                 videoUrl = nestedVideoUrl;
 
                 // 更新当前URL参数
-                const url = new URL(window.location.href);
+                const url = new 网站(window.location.href);
                 if (!urlParams.has('position') && nestedPosition) {
                     url.searchParams.set('position', nestedPosition);
                 }
@@ -202,7 +202,7 @@ function initializePageContent() {
             }
 
             // 更新URL以反映修正后的索引
-            const newUrl = new URL(window.location.href);
+            const newUrl = new 网站(window.location.href);
             newUrl.searchParams.set('index', index);
             window.history.replaceState({}, '', newUrl);
         }
@@ -407,7 +407,17 @@ function initPlayer(videoUrl) {
         art.destroy();
         art = null;
     }
-
+// 在播放器初始化代码后添加
+player.on('timeupdate', () => {
+  const currentTime = player.currentTime;
+  const duration = player.duration;
+  
+  // 跳过片尾逻辑
+  if (skipOutro > 0 && currentTime > (duration - skipOutro)) {
+    player.pause();
+    player.currentTime = duration - skipOutro; // 防止重复触发
+  }
+});
     // 配置HLS.js选项
     const hlsConfig = {
         debug: false,
